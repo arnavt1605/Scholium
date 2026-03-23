@@ -11,39 +11,84 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 
-// Imports for your screens
 import com.example.scholium.ui.screens.HomeScreen
 import com.example.scholium.ui.screens.PaperAnalyzerScreen
-
-// Import your custom theme
-// (If this line turns red, delete it, click on ScholiumTheme below, and press Alt+Enter to re-import it)
 import com.example.scholium.ui.theme.ScholiumTheme
+import com.example.scholium.data.local.AppDatabase
+import androidx.navigation.navArgument
+import androidx.navigation.NavType
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val database = AppDatabase.getDatabase(applicationContext)
+        val chatDao = database.chatDao()
+
         setContent {
-            // THEME WRAPPER: If this is red, change it to match the name in your ui/theme/Theme.kt file
             ScholiumTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-
-                    // --- NAVIGATION SETUP ---
                     val navController = rememberNavController()
 
-                    // NavHost acts as the Traffic Controller
                     NavHost(navController = navController, startDestination = "home") {
 
-                        // Route 1: The Dashboard Menu
                         composable("home") {
                             HomeScreen(navController = navController)
                         }
 
-                        // Route 2: Your awesome PDF Engine
-                        composable("analyze_paper") {
-                            PaperAnalyzerScreen()
+                        composable("related_papers") {
+                            com.example.scholium.ui.screens.RelatedPapersScreen(navController = navController)
+                        }
+
+                        composable(
+                            route = "analyze_paper?sessionId={sessionId}",
+                            arguments = listOf(navArgument("sessionId") {
+                                defaultValue = -1L
+                                type = NavType.LongType
+                            })
+                        ) { backStackEntry ->
+                            val sessionId = backStackEntry.arguments?.getLong("sessionId") ?: -1L
+                            // If it's -1, we are starting a fresh chat. Otherwise, pass the real ID.
+                            val actualSessionId = if (sessionId == -1L) null else sessionId
+
+                            PaperAnalyzerScreen(chatDao = chatDao, existingSessionId = actualSessionId)
+                        }
+                        composable("history") {
+                            com.example.scholium.ui.screens.HistoryScreen(navController = navController, chatDao = chatDao)
+                        }
+
+                        composable("citation_generator") {
+                            com.example.scholium.ui.screens.CitationScreen(navController = navController)
+                        }
+
+                        composable("open_access") {
+                            com.example.scholium.ui.screens.OpenAccessScreen(navController = navController)
+                        }
+
+                        composable("abstract_summary") {
+                            com.example.scholium.ui.screens.AbstractSummaryScreen(navController = navController)
+                        }
+
+                        composable("paper_reviewer") {
+                            com.example.scholium.ui.screens.PaperReviewerScreen(navController = navController)
+                        }
+                        composable("latex_generator") {
+                            com.example.scholium.ui.screens.LatexGeneratorScreen(navController = navController)
+                        }
+
+                        composable("chat_detail/{sessionId}") { backStackEntry ->
+                            // Extract the ID from the URL
+                            val sessionIdString = backStackEntry.arguments?.getString("sessionId")
+                            val sessionId = sessionIdString?.toLongOrNull() ?: 0L
+
+                            com.example.scholium.ui.screens.ChatDetailScreen(
+                                navController = navController,
+                                chatDao = chatDao,
+                                sessionId = sessionId
+                            )
                         }
 
                     }

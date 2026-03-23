@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -19,6 +20,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.RateReview
+import androidx.compose.material.icons.filled.Functions
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,7 +44,7 @@ fun HomeScreen(navController: NavController) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. MAIN FEATURE: Analyze Paper (Routes to your hard work!)
+            // 1. Analyze Paper
             FeatureCard(
                 title = "Analyze Research Paper",
                 description = "Upload PDF, Extract Text, Ask AI",
@@ -48,39 +53,72 @@ fun HomeScreen(navController: NavController) {
                 onClick = { navController.navigate("analyze_paper") }
             )
 
-            Text("Quick Tools", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
-
-            // 2. Related Papers (Placeholder route)
+            //2. Chat history
             FeatureCard(
-                title = "Find Related Papers",
-                description = "Get a list of similar academic papers",
-                icon = Icons.AutoMirrored.Filled.Article,
-                onClick = { /* Link */ }
+                title = "Analysis History",
+                description = "View your past AI explanations",
+                icon = Icons.Default.History,
+                backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                onClick = { navController.navigate("history") }
             )
+
+            Text("Quick Tools", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
 
             // 3. Citation Formatter
             FeatureCard(
-                title = "Citation Formatter",
-                description = "Convert DOI to APA/MLA citations",
-                icon = Icons.Default.Book,
-                onClick = { /* Link */ }
+                title = "Citation Generator",
+                description = "Convert any DOI into APA, IEEE, or MLA instantly.",
+                icon = Icons.Default.FormatQuote,
+                backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                onClick = { navController.navigate("citation_generator") }
             )
 
-            // 4. OA Checker
+            // 4. Find related papers
             FeatureCard(
-                title = "Open Access Checker",
-                description = "Check if a paper is paywalled",
-                icon = Icons.Default.LockOpen,
-                onClick = { /* Link */ }
+                title = "Find Related Papers",
+                description = "Discover literature based on a topic or title.",
+                icon = Icons.Default.Search, // Ensure androidx.compose.material.icons.filled.Search is imported
+                backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                onClick = { navController.navigate("related_papers") }
             )
 
-            // 5. Find OA PDF
+            // 5. Open Access Checker
             FeatureCard(
-                title = "Find PDF Link",
-                description = "Get direct download link for papers",
-                icon = Icons.Default.Search,
-                onClick = { /* Link */ }
+                title = "Open Access Finder",
+                description = "Bypass paywalls by finding legal, free PDF versions.",
+                icon = Icons.Default.LockOpen, // Ensure androidx.compose.material.icons.filled.LockOpen is imported
+                backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                onClick = { navController.navigate("open_access") }
             )
+
+            // 6. Abstract TLDR
+            FeatureCard(
+                title = "Abstract TLDR",
+                description = "Paste a dense abstract and let AI extract the core findings.",
+                icon = Icons.Default.AutoAwesome, // Ensure androidx.compose.material.icons.filled.AutoAwesome is imported
+                backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                onClick = { navController.navigate("abstract_summary") }
+            )
+
+            //7. AI Paper reviewer
+            FeatureCard(
+                title = "AI Paper Reviewer",
+                description = "Upload a draft. Gemma 3 Vision acts as Reviewer 2 to critique your work.",
+                icon = Icons.Default.RateReview,
+                backgroundColor = MaterialTheme.colorScheme.primaryContainer,
+                onClick = { navController.navigate("paper_reviewer") }
+            )
+
+            //8. Latex Equation
+            FeatureCard(
+                title = "LaTeX Generator",
+                description = "Snap a photo of an equation and instantly convert it to LaTeX code.",
+                icon = Icons.Default.Functions,
+                backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                onClick = { navController.navigate("latex_generator") }
+            )
+
+
         }
     }
 }

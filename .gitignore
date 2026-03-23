@@ -1,0 +1,80 @@
+# ===== Android / Gradle =====
+.gradle/
+build/
+*/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local configuration
+local.properties
+
+# Generated files
+*.log
+*.hprof
+
+# APK / AAB outputs
+*.apk
+*.ap_
+*.aab
+
+# Signing files (never commit)
+*.jks
+*.keystore
+keystore.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Navigation Safe Args
+.navigation/
+
+# Data binding
+dataBindingGenBaseClassesDebug/
+dataBindingGenBaseClassesRelease/
+
+# Kotlin
+.kotlin/
+*.kotlin_module
+
+# NDK
+obj/
+lib/
+
+# Google Services (auto-generated)
+google-services.json
+
+# Firebase Crashlytics
+com_crashlytics_export_strings.xml
+
+# Proguard
+proguard/
+proguard-rules.pro
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Linux
+*~
+
+# VS Code (if used)
+.vscode/
+
+# Test outputs
+test-output/
+coverage/
+
+# Gradle wrapper (keep jar, ignore others if desired)
+gradle-app.setting
+
+# Build cache
+.gradle-cache/
+
+# Jetpack Compose build intermediates
+compose_compiler/

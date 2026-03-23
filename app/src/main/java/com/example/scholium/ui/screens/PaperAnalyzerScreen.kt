@@ -34,7 +34,10 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PaperAnalyzerScreen() {
+fun PaperAnalyzerScreen(
+    chatDao: com.example.scholium.data.local.ChatDao,
+    existingSessionId: Long? = null // <-- NEW: Accepts the ID from the History screen
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -48,20 +51,60 @@ fun PaperAnalyzerScreen() {
     var currentCroppedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var imageViewSize by remember { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) }
 
-    // State for Processing (OCR)
+    // State for Processing Overlay (OCR Loading)
     var isProcessing by remember { mutableStateOf(false) }
 
-    // State to force-clear the selection box (The Fix for your bug)
+    // State to force-clear the selection box
     var selectionResetKey by remember { mutableIntStateOf(0) }
+
+    // --- CHAT & DATABASE STATES ---
+    val chatHistory = remember { mutableStateListOf<com.example.scholium.domain.ChatMessage>() }
+    var showChatSheet by remember { mutableStateOf(false) }
+    var isAiThinking by remember { mutableStateOf(false) }
+    var currentSessionId by remember { mutableStateOf<Long?>(existingSessionId) }
 
     fun loadPage(pageIndex: Int) {
         if (pdfFile != null && pageIndex in 0 until totalPageCount) {
             scope.launch(Dispatchers.IO) {
                 val bitmap = PdfUtils.pdfToBitmap(pdfFile!!, pageIndex)
-                // Switch back to Main thread to update UI
                 launch(Dispatchers.Main) {
                     pdfBitmap = bitmap
                     currentPageIndex = pageIndex
+                }
+            }
+        }
+    }
+
+    // --- NEW: RESTORE OLD SESSION IF LAUNCHED FROM HISTORY ---
+    LaunchedEffect(existingSessionId) {
+        if (existingSessionId != null && existingSessionId != -1L) {
+            scope.launch(Dispatchers.IO) {
+                val session = chatDao.getSession(existingSessionId)
+                val pastMessages = chatDao.getMessagesForSession(existingSessionId)
+
+                launch(Dispatchers.Main) {
+                    // 1. Try to load the PDF File
+                    if (session?.pdfPath != null) {
+                        val file = File(session.pdfPath)
+                        if (file.exists()) {
+                            pdfFile = file
+                            totalPageCount = PdfUtils.getPageCount(file)
+                            loadPage(0)
+                        } else {
+                            android.widget.Toast.makeText(context, "Original PDF was moved or deleted. Please re-upload.", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+
+                    // 2. Load the Chat History
+                    chatHistory.clear()
+                    pastMessages.forEach { msg ->
+                        chatHistory.add(com.example.scholium.domain.ChatMessage(msg.role, msg.content, msg.isUser))
+                    }
+
+                    // 3. Open the chat sheet automatically if we have history
+                    if (chatHistory.isNotEmpty()) {
+                        showChatSheet = true
+                    }
                 }
             }
         }
@@ -75,11 +118,14 @@ fun PaperAnalyzerScreen() {
                 val file = PdfUtils.uriToFile(context, it)
                 if (file != null) {
                     val count = PdfUtils.getPageCount(file)
-                    // Update State on Main Thread
                     launch(Dispatchers.Main) {
                         pdfFile = file
                         totalPageCount = count
                         loadPage(0)
+
+                        // If they upload a NEW PDF, reset the chat session
+                        currentSessionId = null
+                        chatHistory.clear()
                     }
                 }
             }
@@ -136,7 +182,6 @@ fun PaperAnalyzerScreen() {
         }
     ) { paddingValues ->
 
-        // --- MAIN CONTENT AREA ---
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -149,23 +194,19 @@ fun PaperAnalyzerScreen() {
                 Image(
                     bitmap = pdfBitmap!!.asImageBitmap(),
                     contentDescription = "PDF Page",
-                    // FillBounds ensures the image stretches to fill the space, simplifying coordinate math
                     contentScale = ContentScale.FillBounds,
                     modifier = Modifier
                         .fillMaxSize()
                         .onGloballyPositioned { coordinates ->
-                            // Capture the actual size of the image on screen for math later
                             imageViewSize = coordinates.size.toSize()
                         }
                 )
 
                 // LAYER 2: The Drawing Overlay
-                // 'key' forces this component to restart when selectionResetKey changes
                 key(selectionResetKey) {
                     SelectionOverlay(
                         modifier = Modifier.fillMaxSize(),
                         onSelectionFinished = { rect: Rect ->
-                            // MATH: Crop the actual bitmap based on where user drew on screen
                             if (imageViewSize.width > 0 && imageViewSize.height > 0) {
                                 val cropped = PdfUtils.cropBitmap(
                                     original = pdfBitmap!!,
@@ -173,7 +214,6 @@ fun PaperAnalyzerScreen() {
                                     viewWidth = imageViewSize.width,
                                     viewHeight = imageViewSize.height
                                 )
-                                // If crop was successful, show the popup
                                 if (cropped != null) {
                                     currentCroppedBitmap = cropped
                                     showDialog = true
@@ -189,30 +229,78 @@ fun PaperAnalyzerScreen() {
                         croppedBitmap = currentCroppedBitmap!!,
                         onDismiss = {
                             showDialog = false
-                            selectionResetKey++ // FIX: Increment key to wipe the blue box on Cancel
+                            selectionResetKey++
                         },
                         onConfirm = { type ->
                             showDialog = false
-                            selectionResetKey++ // FIX: Increment key to wipe the blue box on Confirm
-                            isProcessing = true // Start Loading
+                            selectionResetKey++
+                            isProcessing = true
 
-                            // RUN OCR
+                            // RUN OCR AND START/CONTINUE CHAT
                             scope.launch(Dispatchers.IO) {
                                 try {
                                     val extractedText = OCRHelper.extractTextFromBitmap(currentCroppedBitmap!!)
 
-                                    println("=== OCR RESULT ===")
-                                    println("Type: $type")
-                                    println("Text: $extractedText")
-                                    println("==================")
+                                    if (extractedText.trim().isEmpty()) {
+                                        launch(Dispatchers.Main) {
+                                            isProcessing = false
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Could not read any text. Please zoom in or select a clearer area.",
+                                                android.widget.Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                        return@launch
+                                    }
 
-                                    // TODO: Next Phase - Send this to Gemini AI
+                                    // Check if we need a new session or are appending to an active one
+                                    var activeSessionId = currentSessionId
+                                    if (activeSessionId == null || activeSessionId == -1L) {
+                                        val newSession = com.example.scholium.data.local.ChatSessionEntity(
+                                            title = "Analysis: $type",
+                                            pdfPath = pdfFile?.absolutePath // Save the path!
+                                        )
+                                        activeSessionId = chatDao.insertSession(newSession)
+
+                                        launch(Dispatchers.Main) {
+                                            currentSessionId = activeSessionId
+                                        }
+                                    }
+
+                                    val systemPrompt = "You are an academic assistant. Analyze this $type extracted from a paper: \"$extractedText\"."
+
+                                    // Save messages to Database under the active session
+                                    chatDao.insertMessage(com.example.scholium.data.local.ChatMessageEntity(sessionId = activeSessionId!!, role = "system", content = systemPrompt, isUser = false))
+                                    chatDao.insertMessage(com.example.scholium.data.local.ChatMessageEntity(sessionId = activeSessionId!!, role = "user", content = "Explain this $type.", isUser = true))
+
+                                    // Update UI on Main thread
+                                    launch(Dispatchers.Main) {
+                                        // Notice we do NOT clear the chat here! We append the new cropped context.
+                                        chatHistory.add(com.example.scholium.domain.ChatMessage(role = "system", content = systemPrompt, isUser = false))
+                                        chatHistory.add(com.example.scholium.domain.ChatMessage(role = "user", content = "Explain this $type.", isUser = true))
+
+                                        showChatSheet = true
+                                        isAiThinking = true
+                                        isProcessing = false
+                                    }
+
+                                    // Call Sarvam AI
+                                    val aiResponse = com.example.scholium.data.SarvamApiService.getChatResponse(chatHistory)
+
+                                    // SAVE AI RESPONSE TO DB
+                                    chatDao.insertMessage(com.example.scholium.data.local.ChatMessageEntity(sessionId = activeSessionId!!, role = "assistant", content = aiResponse, isUser = false))
+
+                                    // Update UI with AI's answer
+                                    launch(Dispatchers.Main) {
+                                        chatHistory.add(com.example.scholium.domain.ChatMessage(role = "assistant", content = aiResponse, isUser = false))
+                                        isAiThinking = false
+                                    }
 
                                 } catch (e: Exception) {
                                     e.printStackTrace()
-                                } finally {
                                     launch(Dispatchers.Main) {
-                                        isProcessing = false // Stop Loading
+                                        isProcessing = false
+                                        isAiThinking = false
                                     }
                                 }
                             }
@@ -220,12 +308,50 @@ fun PaperAnalyzerScreen() {
                     )
                 }
 
-                // LAYER 4: Loading Indicator
+                // LAYER 4: The Chat Sheet
+                if (showChatSheet) {
+                    com.example.scholium.ui.components.ChatSheet(
+                        messages = chatHistory,
+                        isThinking = isAiThinking,
+                        onDismiss = { showChatSheet = false },
+                        onSendMessage = { userText ->
+
+                            chatHistory.add(com.example.scholium.domain.ChatMessage(role = "user", content = userText, isUser = true))
+                            isAiThinking = true
+
+                            scope.launch(Dispatchers.IO) {
+                                try {
+                                    // SAVE USER QUESTION TO DB
+                                    currentSessionId?.let { id ->
+                                        chatDao.insertMessage(com.example.scholium.data.local.ChatMessageEntity(sessionId = id, role = "user", content = userText, isUser = true))
+                                    }
+
+                                    val aiResponse = com.example.scholium.data.SarvamApiService.getChatResponse(chatHistory)
+
+                                    // SAVE AI ANSWER TO DB
+                                    currentSessionId?.let { id ->
+                                        chatDao.insertMessage(com.example.scholium.data.local.ChatMessageEntity(sessionId = id, role = "assistant", content = aiResponse, isUser = false))
+                                    }
+
+                                    launch(Dispatchers.Main) {
+                                        chatHistory.add(com.example.scholium.domain.ChatMessage(role = "assistant", content = aiResponse, isUser = false))
+                                        isAiThinking = false
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    launch(Dispatchers.Main) { isAiThinking = false }
+                                }
+                            }
+                        }
+                    )
+                }
+
+                // LAYER 5: Full-Screen Loading Indicator
                 if (isProcessing) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.5f)), // Dim the background
+                            .background(Color.Black.copy(alpha = 0.5f)),
                         contentAlignment = Alignment.Center
                     ) {
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
