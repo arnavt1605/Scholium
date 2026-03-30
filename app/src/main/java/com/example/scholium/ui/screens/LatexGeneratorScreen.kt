@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
+import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -30,7 +31,9 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavController
+import com.example.scholium.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
@@ -41,6 +44,53 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
+
+@Composable
+fun LatexRenderer(latexCode: String, modifier: Modifier = Modifier) {
+    // We wrap the LaTeX code in a basic HTML template that loads the KaTeX library
+    val htmlContent = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+            <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+            <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"
+                onload="renderMathInElement(document.body);"></script>
+            <style>
+                body { 
+                    display: flex; 
+                    justify-content: center; 
+                    align-items: center; 
+                    min-height: 100vh; 
+                    margin: 0; 
+                    font-size: 20px; 
+                    background-color: transparent; 
+                    color: #000000; 
+                }
+            </style>
+        </head>
+        <body>
+            $$ $latexCode $$
+        </body>
+        </html>
+    """.trimIndent()
+
+    AndroidView(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 100.dp, max = 200.dp), // Restricts how tall the webview can get
+        factory = { context ->
+            WebView(context).apply {
+                settings.javaScriptEnabled = true
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                loadDataWithBaseURL(null, htmlContent, "text/html", "UTF-8", null)
+            }
+        },
+        update = { webView ->
+            webView.loadDataWithBaseURL(null, htmlContent, "text/html", "UTF-8", null)
+        }
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,7 +157,6 @@ fun LatexGeneratorScreen(navController: NavController) {
             try {
                 val partsArray = JSONArray()
 
-                // Strict Prompting for pure code
                 val textPart = JSONObject().apply {
                     put("text", "You are a mathematical transcription engine. Look at the equation in this image and convert it into pure LaTeX code. Return ONLY the raw LaTeX string. Do NOT wrap it in markdown code blocks. Do NOT provide any explanations.")
                 }
@@ -130,7 +179,7 @@ fun LatexGeneratorScreen(navController: NavController) {
                     put("contents", JSONArray().put(contentObj))
                 }.toString()
 
-                val geminiApiKey = "AIzaSyDtSKxzP5KOS8rThuWomehwg1DQPT1yF0Q"
+                val geminiApiKey = BuildConfig.GEMINI_API_KEY
                 val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$geminiApiKey"
 
                 val client = OkHttpClient.Builder()
@@ -155,7 +204,7 @@ fun LatexGeneratorScreen(navController: NavController) {
                             ?.optJSONObject(0)
                             ?.optString("text", "No equation detected.") ?: "Parse error."
 
-                        // Clean up just in case the AI ignores the markdown rule
+                        // Clean up markdown in case the AI ignores the prompt
                         content = content.replace("```latex", "").replace("```", "").trim()
 
                         launch(Dispatchers.Main) { latexResult = content }
@@ -215,7 +264,9 @@ fun LatexGeneratorScreen(navController: NavController) {
                         bitmap = selectedBitmap!!.asImageBitmap(),
                         contentDescription = "Selected Equation",
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize().padding(8.dp)
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(8.dp)
                     )
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -230,7 +281,9 @@ fun LatexGeneratorScreen(navController: NavController) {
 
             Button(
                 onClick = { imagePickerLauncher.launch("image/*") },
-                modifier = Modifier.fillMaxWidth().height(50.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
             ) {
                 Icon(Icons.Default.CameraAlt, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -241,7 +294,9 @@ fun LatexGeneratorScreen(navController: NavController) {
 
             Button(
                 onClick = { generateLatex() },
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
                 enabled = !isLoading && base64Image != null,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
             ) {
@@ -254,8 +309,8 @@ fun LatexGeneratorScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // The Result Card
-            if (latexResult.isNotEmpty()) {
+            // The Result Card with Live Preview
+            if (latexResult.isNotEmpty() && !isLoading) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -266,19 +321,28 @@ fun LatexGeneratorScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("LaTeX Code", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("AI Interpretation", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             IconButton(onClick = { clipboardManager.setText(AnnotatedString(latexResult)) }) {
                                 Icon(Icons.Default.ContentCopy, "Copy", modifier = Modifier.size(20.dp))
                             }
                         }
 
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Preview:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
+                        Box(modifier = Modifier.fillMaxWidth().background(Color.White, shape = MaterialTheme.shapes.small).padding(8.dp)) {
+                            LatexRenderer(latexCode = latexResult)
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                        Text("Raw Code:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.height(4.dp))
                         SelectionContainer {
                             Text(
                                 text = latexResult,
                                 style = MaterialTheme.typography.bodyLarge,
-                                fontFamily = FontFamily.Monospace // Makes the code look like a terminal
+                                fontFamily = FontFamily.Monospace
                             )
                         }
                     }

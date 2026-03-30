@@ -6,6 +6,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.FormatQuote
@@ -24,6 +25,9 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.filled.Publish
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +48,8 @@ fun HomeScreen(navController: NavController) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+
+            Text("Analyze Papers", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
             // 1. Analyze Paper
             FeatureCard(
                 title = "Analyze Research Paper",
@@ -62,9 +68,44 @@ fun HomeScreen(navController: NavController) {
                 onClick = { navController.navigate("history") }
             )
 
+            Text("Agentic AI Tools", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+
+            FeatureCard(
+                title = "Autonomous Literature Reviewer",
+                description = "Upload up to 3 PDFs and generate a synthesized literature review instantly.",
+                icon = Icons.AutoMirrored.Filled.LibraryBooks,
+                backgroundColor = MaterialTheme.colorScheme.tertiaryContainer,
+                onClick = { navController.navigate("lit_reviewer") }
+            )
+
+            FeatureCard(
+                title = "Claim Verifier & Citer",
+                description = "Paste a draft claim. AI verifies it against Crossref and adds citations.",
+                icon = Icons.Default.FactCheck,
+                backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                onClick = { navController.navigate("claim_verifier") }
+            )
+
             Text("Quick Tools", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
 
-            // 3. Citation Formatter
+
+            FeatureCard(
+                title = "Journal Matcher",
+                description = "Upload your manuscript to find the best-fit Q1/Q2 journals.",
+                icon = Icons.Default.Publish,
+                backgroundColor = MaterialTheme.colorScheme.tertiaryContainer,
+                onClick = { navController.navigate("journal_matcher") }
+            )
+
+            FeatureCard(
+                title = "Rebuttal Drafter",
+                description = "Cross-reference reviewer comments with your manuscript.",
+                icon = Icons.Default.RateReview,
+                backgroundColor = MaterialTheme.colorScheme.secondaryContainer,
+                onClick = { navController.navigate("rebuttal_drafter") }
+            )
+
+            // Citation Formatter
             FeatureCard(
                 title = "Citation Generator",
                 description = "Convert any DOI into APA, IEEE, or MLA instantly.",
@@ -73,7 +114,7 @@ fun HomeScreen(navController: NavController) {
                 onClick = { navController.navigate("citation_generator") }
             )
 
-            // 4. Find related papers
+            // Find related papers
             FeatureCard(
                 title = "Find Related Papers",
                 description = "Discover literature based on a topic or title.",
@@ -82,7 +123,7 @@ fun HomeScreen(navController: NavController) {
                 onClick = { navController.navigate("related_papers") }
             )
 
-            // 5. Open Access Checker
+            // Open Access Checker
             FeatureCard(
                 title = "Open Access Finder",
                 description = "Bypass paywalls by finding legal, free PDF versions.",
@@ -91,7 +132,7 @@ fun HomeScreen(navController: NavController) {
                 onClick = { navController.navigate("open_access") }
             )
 
-            // 6. Abstract TLDR
+            //  Abstract TLDR
             FeatureCard(
                 title = "Abstract TLDR",
                 description = "Paste a dense abstract and let AI extract the core findings.",
@@ -100,16 +141,16 @@ fun HomeScreen(navController: NavController) {
                 onClick = { navController.navigate("abstract_summary") }
             )
 
-            //7. AI Paper reviewer
+            // AI Paper reviewer
             FeatureCard(
                 title = "AI Paper Reviewer",
-                description = "Upload a draft. Gemma 3 Vision acts as Reviewer 2 to critique your work.",
+                description = "Upload a draft. AI acts as a reviewer to critique your work.",
                 icon = Icons.Default.RateReview,
                 backgroundColor = MaterialTheme.colorScheme.primaryContainer,
                 onClick = { navController.navigate("paper_reviewer") }
             )
 
-            //8. Latex Equation
+            // Latex Equation
             FeatureCard(
                 title = "LaTeX Generator",
                 description = "Snap a photo of an equation and instantly convert it to LaTeX code.",

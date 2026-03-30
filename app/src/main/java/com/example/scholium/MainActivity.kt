@@ -79,6 +79,21 @@ class MainActivity : ComponentActivity() {
                             com.example.scholium.ui.screens.LatexGeneratorScreen(navController = navController)
                         }
 
+                        composable("lit_reviewer") {
+                            com.example.scholium.ui.screens.LitReviewerScreen(navController = navController)
+                        }
+
+                        composable("claim_verifier") {
+                            com.example.scholium.ui.screens.ClaimVerifierScreen(navController = navController)
+                        }
+
+                        composable("journal_matcher") {
+                            com.example.scholium.ui.screens.JournalMatcherScreen(navController = navController)
+                        }
+                        composable("rebuttal_drafter") {
+                            com.example.scholium.ui.screens.ReviewRebuttalScreen(navController = navController)
+                        }
+
                         composable("chat_detail/{sessionId}") { backStackEntry ->
                             // Extract the ID from the URL
                             val sessionIdString = backStackEntry.arguments?.getString("sessionId")

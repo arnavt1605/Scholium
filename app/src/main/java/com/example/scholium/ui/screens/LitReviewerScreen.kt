@@ -1,10 +1,6 @@
 package com.example.scholium.ui.screens
 
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.pdf.PdfRenderer
 import android.net.Uri
-import android.os.ParcelFileDescriptor
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,18 +11,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.example.scholium.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
@@ -35,118 +31,84 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PaperReviewerScreen(navController: NavController) {
+fun LitReviewerScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
     val scrollState = rememberScrollState()
 
-    var selectedFileName by remember { mutableStateOf<String?>(null) }
+    var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var reviewResult by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var loadingStatus by remember { mutableStateOf("") }
 
+    // Launcher to select multiple PDFs
+    val pdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
 
-    fun extractPagesAsBase64(uri: Uri, maxPages: Int = 3): List<String> {
-        val base64Images = mutableListOf<String>()
-        try {
-            val parcelFileDescriptor = context.contentResolver.openFileDescriptor(uri, "r") ?: return emptyList()
-            val pdfRenderer = PdfRenderer(parcelFileDescriptor)
-
-            val pageCount = minOf(pdfRenderer.pageCount, maxPages)
-
-            for (i in 0 until pageCount) {
-                val page = pdfRenderer.openPage(i)
-                // Render at a lower resolution to save memory and API payload size (e.g., 800px wide)
-                val scale = 800f / page.width
-                val width = (page.width * scale).toInt()
-                val height = (page.height * scale).toInt()
-
-                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                // Fill background with white (otherwise transparent PDFs turn black)
-                bitmap.eraseColor(android.graphics.Color.WHITE)
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-
-                // Compress to JPEG and convert to Base64
-                val outputStream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
-                val byteArray = outputStream.toByteArray()
-                val base64String = Base64.encodeToString(byteArray, Base64.NO_WRAP)
-
-                base64Images.add(base64String)
-                page.close()
-            }
-            pdfRenderer.close()
-            parcelFileDescriptor.close()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return base64Images
+        selectedUris = uris.take(4)
     }
 
-
-    fun runVisionReview(uri: Uri) {
+    fun runLiteratureReview() {
+        if (selectedUris.isEmpty()) return
         isLoading = true
         reviewResult = ""
-        loadingStatus = "Extracting images from PDF..."
+        loadingStatus = "Reading ${selectedUris.size} papers..."
 
         scope.launch(Dispatchers.IO) {
             try {
-                // 1. Convert first 3 pages to images
-                val base64Pages = extractPagesAsBase64(uri, maxPages = 3)
-                if (base64Pages.isEmpty()) {
-                    launch(Dispatchers.Main) {
-                        reviewResult = "Error: Could not read the PDF file."
-                        isLoading = false
-                    }
-                    return@launch
-                }
-
-                launch(Dispatchers.Main) { loadingStatus = "Analyzing charts, tables, and text with Gemini Vision..." }
-
-                // 2. Build the Gemini API JSON Payload
                 val partsArray = JSONArray()
 
-                // Add the Prompt Text
-                val textPart = JSONObject().apply {
-                    put("text", "You are 'Reviewer 2', an expert academic peer reviewer. I am providing you with images of the first few pages of a manuscript (including figures and tables). Please provide a structured review: \n1. Core Strengths\n2. Potential Weaknesses or Flaws\n3. Constructive suggestions for improvement. Send plain text and do not use special characters like #,- or *")
-                }
-                partsArray.put(textPart)
+                // 1. Add the highly specific Agentic Prompt
+                val promptText = """
+                    You are an expert academic researcher and synthesis engine. I am providing you with ${selectedUris.size} full research papers. 
+                    Your task is to write a comprehensive 'Literature Review' synthesizing their findings. 
+                    Format the output with the following Markdown headings:
+                    - Introduction & Common Themes
+                    - Methodological Comparisons
+                    - Consensus & Contradictions (Where do they agree/disagree?)
+                    - The Research Gap (What is left unanswered?)
+                    Be highly analytical, cite specific details from the texts, and maintain a formal academic tone. Send only plain text. Do not include characters like #, * and -.
+                """.trimIndent()
 
-                // Add each page as an Inline Data part
-                for (base64 in base64Pages) {
-                    val inlineDataObj = JSONObject().apply {
-                        put("mime_type", "image/jpeg")
-                        put("data", base64)
+                partsArray.put(JSONObject().apply { put("text", promptText) })
+
+                // 2. Loop through the selected PDFs and attach them natively
+                for (uri in selectedUris) {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    // Read the raw PDF file bytes
+                    val bytes = inputStream?.readBytes()
+                    inputStream?.close()
+
+                    if (bytes != null) {
+                        val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                        val inlineDataObj = JSONObject().apply {
+                            put("mime_type", "application/pdf")
+                            put("data", base64)
+                        }
+                        partsArray.put(JSONObject().apply { put("inline_data", inlineDataObj) })
                     }
-                    val imagePart = JSONObject().apply {
-                        put("inline_data", inlineDataObj)
-                    }
-                    partsArray.put(imagePart)
                 }
 
-                val contentObj = JSONObject().apply {
-                    put("parts", partsArray)
-                }
+                launch(Dispatchers.Main) { loadingStatus = "Synthesizing literature review..." }
 
+                val contentObj = JSONObject().apply { put("parts", partsArray) }
                 val jsonBody = JSONObject().apply {
                     put("contents", JSONArray().put(contentObj))
                 }.toString()
 
-                // 3. Fire the Request
-                val geminiApiKey = com.example.scholium.BuildConfig.GEMINI_API_KEY
+                val geminiApiKey = BuildConfig.GEMINI_API_KEY
                 val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$geminiApiKey"
 
                 val client = OkHttpClient.Builder()
                     .connectTimeout(60, TimeUnit.SECONDS)
-                    .readTimeout(120, TimeUnit.SECONDS)
+                    // Give it 3 minutes! Reading 4 full PDFs takes heavy computation
+                    .readTimeout(180, TimeUnit.SECONDS)
                     .build()
 
                 val request = Request.Builder()
@@ -159,8 +121,8 @@ fun PaperReviewerScreen(navController: NavController) {
                     val responseBody = response.body?.string() ?: "Empty response"
                     if (response.isSuccessful) {
                         val jsonResponse = JSONObject(responseBody)
-                        val candidates = jsonResponse.optJSONArray("candidates")
-                        val content = candidates?.optJSONObject(0)
+                        val content = jsonResponse.optJSONArray("candidates")
+                            ?.optJSONObject(0)
                             ?.optJSONObject("content")
                             ?.optJSONArray("parts")
                             ?.optJSONObject(0)
@@ -168,10 +130,11 @@ fun PaperReviewerScreen(navController: NavController) {
 
                         launch(Dispatchers.Main) { reviewResult = content.trim() }
                     } else {
-                    val errorCode = response.code
-                    launch(Dispatchers.Main) { reviewResult = "API Error $errorCode: $responseBody" }
+                        launch(Dispatchers.Main) { reviewResult = "API Error ${response.code}: $responseBody" }
                     }
                 }
+            } catch (e: OutOfMemoryError) {
+                launch(Dispatchers.Main) { reviewResult = "Error: The selected PDFs are too large for your phone's memory. Try selecting fewer or smaller files." }
             } catch (e: Exception) {
                 e.printStackTrace()
                 launch(Dispatchers.Main) { reviewResult = "Network Error: ${e.message}" }
@@ -181,20 +144,10 @@ fun PaperReviewerScreen(navController: NavController) {
         }
     }
 
-    val pdfPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            // Get a basic file name for the UI
-            selectedFileName = "Manuscript_Selected.pdf"
-            runVisionReview(it)
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("AI Paper Reviewer", color = MaterialTheme.colorScheme.onPrimary) },
+                title = { Text("Autonomous Litearture Reviewer", color = MaterialTheme.colorScheme.onPrimary) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onPrimary)
@@ -213,7 +166,7 @@ fun PaperReviewerScreen(navController: NavController) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Upload your manuscript",
+                text = "Select up to 3 related research papers. The AI agent will read all of them and automatically write a synthesized literature review.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -221,22 +174,42 @@ fun PaperReviewerScreen(navController: NavController) {
             Spacer(modifier = Modifier.height(24.dp))
 
             Button(
-                onClick = { pdfPickerLauncher.launch("application/pdf") },
+                onClick = { pdfPickerLauncher.launch(arrayOf("application/pdf")) },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 enabled = !isLoading
             ) {
-                Icon(Icons.Default.UploadFile, contentDescription = null)
+                Icon(Icons.Default.LibraryBooks, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(if (selectedFileName != null) "Select Different PDF" else "Upload Manuscript (PDF)")
+                Text("Select PDFs (Max 3)")
+            }
+
+            if (selectedUris.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "${selectedUris.size} PDF(s) selected ready for analysis.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(
+                onClick = { runLiteratureReview() },
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                enabled = !isLoading && selectedUris.isNotEmpty(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onSecondary)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(loadingStatus, color = MaterialTheme.colorScheme.onSecondary)
+                } else {
+                    Text("Generate Literature Review", fontWeight = FontWeight.Bold)
+                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
-
-            if (isLoading) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(loadingStatus, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
-            }
 
             if (reviewResult.isNotEmpty() && !isLoading) {
                 Card(
@@ -249,7 +222,7 @@ fun PaperReviewerScreen(navController: NavController) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Expert Review", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("Synthesized Review", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             IconButton(onClick = { clipboardManager.setText(AnnotatedString(reviewResult)) }) {
                                 Icon(Icons.Default.ContentCopy, "Copy", modifier = Modifier.size(20.dp))
                             }
